@@ -90,5 +90,50 @@ namespace ConfigurationTool
                 MessageBox.Show("Error saving configuration data: " + ex.Message, "Database Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        /*
+         * FUNCTION    : BtnReload_Click
+         * DESCRIPTION : Reloads the configuration data from the database, discarding unsaved edits.
+         * PARAMETERS  : object sender, RoutedEventArgs e
+         * RETURNS     : void
+         */
+        private void BtnReload_Click(object sender, RoutedEventArgs e)
+        {
+            LoadConfigurationData();
+        }
+
+        /*
+         * FUNCTION    : BtnResetSim_Click
+         * DESCRIPTION : Calls sp_ResetSimulation to clear production logs and reset all bins.
+         * PARAMETERS  : object sender, RoutedEventArgs e
+         * RETURNS     : void
+         */
+        private void BtnResetSim_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBoxResult result = MessageBox.Show(
+                "This will clear all production logs and reset all bins to default.\nAre you sure?",
+                "Reset Simulation", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    using (SqlConnection conn = new SqlConnection(kConnectionString))
+                    {
+                        conn.Open();
+                        using (SqlCommand cmd = new SqlCommand("sp_ResetSimulation", conn))
+                        {
+                            cmd.CommandType = CommandType.StoredProcedure;
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    MessageBox.Show("Simulation reset successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error resetting simulation: " + ex.Message, "Database Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
     }
 }

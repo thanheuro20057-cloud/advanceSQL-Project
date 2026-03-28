@@ -1,33 +1,35 @@
-﻿<Window x:Class="WorkstationSimulation.MainWindow"
+﻿    <Window x:Class="WorkstationSimulation.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Workstation Simulation" Height="280" Width="400" WindowStartupLocation="CenterScreen">
+        Title="Workstation Simulation" Height="320" Width="500" WindowStartupLocation="CenterScreen">
     <Grid Margin="20">
         <StackPanel VerticalAlignment="Center">
             <TextBlock Text="Fog Lamp Workstation Simulation"
-                       FontSize="20"
-                       FontWeight="Bold"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,20"/>
+                       FontSize="20" FontWeight="Bold"
+                       HorizontalAlignment="Center" Margin="0,0,0,15"/>
 
-            <TextBlock x:Name="txtStation"
-                       Text="Station 3"
-                       FontSize="16"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,10"/>
+            <!-- Station selector -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                <TextBlock Text="Station:" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox x:Name="cmbStation" Width="250" FontSize="14"/>
+            </StackPanel>
 
-            <TextBlock x:Name="txtStatus"
-                       Text="Running..."
-                       FontSize="16"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,20"/>
+            <!-- Start / Stop buttons -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,15">
+                <Button x:Name="btnStart" Content="Start Simulation" Width="130" Height="35"
+                        Margin="0,0,10,0" Click="btnStart_Click"
+                        Background="#FF28A745" Foreground="White" FontWeight="SemiBold"/>
+                <Button x:Name="btnStop" Content="Stop" Width="80" Height="35"
+                        Click="btnStop_Click" IsEnabled="False"
+                        Background="#FFDC3545" Foreground="White" FontWeight="SemiBold"/>
+            </StackPanel>
 
-            <Button x:Name="btnRefill"
-                    Content="Refill Stock"
-                    Width="120"
-                    Height="35"
-                    HorizontalAlignment="Center"
-                    Click="btnRefill_Click"/>
+            <TextBlock x:Name="txtStation" Text="" FontSize="14"
+                       HorizontalAlignment="Center" Margin="0,0,0,5"/>
+
+            <TextBlock x:Name="txtStatus" Text="Select a station and click Start."
+                       FontSize="14" HorizontalAlignment="Center"
+                       Margin="0,0,0,10" TextWrapping="Wrap"/>
         </StackPanel>
     </Grid>
 </Window>
