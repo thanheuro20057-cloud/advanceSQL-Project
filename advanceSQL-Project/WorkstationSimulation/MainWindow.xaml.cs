@@ -227,6 +227,7 @@ namespace WorkstationSimulation
                     int     built     = 0;
                     decimal buildTime = 0;
                     bool    passed    = true;
+                    int     logID     = 0;
 
                     using (SqlConnection conn = new SqlConnection(kConnectionString))
                     {
@@ -248,11 +249,16 @@ namespace WorkstationSimulation
                             { Direction = ParameterDirection.Output };
                         cmd.Parameters.Add(passedParam);
 
+                        SqlParameter logIDParam = new SqlParameter("@logID", SqlDbType.Int)
+                            { Direction = ParameterDirection.Output };
+                        cmd.Parameters.Add(logIDParam);
+
                         cmd.ExecuteNonQuery();
 
                         built     = Convert.ToInt32(builtParam.Value);
                         buildTime = Convert.ToDecimal(buildTimeParam.Value);
                         passed    = Convert.ToBoolean(passedParam.Value);
+                        logID     = Convert.ToInt32(logIDParam.Value);
                     }
 
                     if (built == 1)
@@ -286,9 +292,10 @@ namespace WorkstationSimulation
                         buildInProgress = false;
 
                         // Only count the lamp if the simulation is still running.
-                        // If Stop was pressed mid-build, discard this cycle silently.
+                        // If Stop was pressed mid-build, cancel the in-progress log row.
                         if (isRunning)
                         {
+                            CallProc("sp_CompleteLamp", logID);
                             lampCount++;
                             if (passed) passCount++; else failCount++;
 
@@ -302,6 +309,10 @@ namespace WorkstationSimulation
                                 txtLastResult.Text       = lastResult;
                                 txtLastResult.Foreground = passed ? Brushes.DarkGreen : Brushes.DarkRed;
                             });
+                        }
+                        else if (logID > 0)
+                        {
+                            CallProc("sp_CancelLamp", logID);
                         }
                     }
                     else
@@ -338,6 +349,30 @@ namespace WorkstationSimulation
                         Thread.Sleep(50);
                 }
             }
+        }
+
+        /*
+         * FUNCTION    : CallProc
+         * DESCRIPTION : Executes a stored procedure that takes a single @logID int parameter.
+         *               Used for sp_CompleteLamp and sp_CancelLamp.
+         * PARAMETERS  : string procName : Name of the stored procedure
+         *               int    logID    : The production log row to act on
+         * RETURNS     : void
+         */
+        private void CallProc(string procName, int logID)
+        {
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(kConnectionString))
+                {
+                    conn.Open();
+                    SqlCommand cmd = new SqlCommand(procName, conn);
+                    cmd.CommandType = CommandType.StoredProcedure;
+                    cmd.Parameters.AddWithValue("@logID", logID);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch { /* best-effort; don't crash the simulation thread */ }
         }
 
         /*

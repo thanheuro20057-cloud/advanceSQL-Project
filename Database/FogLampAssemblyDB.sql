@@ -37,6 +37,10 @@ IF OBJECT_ID('dbo.fn_GetConfigValue', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_Get
 GO
 IF OBJECT_ID('dbo.sp_BuildLamp', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_BuildLamp;
 GO
+IF OBJECT_ID('dbo.sp_CompleteLamp', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_CompleteLamp;
+GO
+IF OBJECT_ID('dbo.sp_CancelLamp', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_CancelLamp;
+GO
 IF OBJECT_ID('dbo.sp_RefillBin', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_RefillBin;
 GO
 IF OBJECT_ID('dbo.sp_RefillAllBins', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_RefillAllBins;
@@ -151,6 +155,7 @@ CREATE TABLE dbo.ProductionLog
     workerID         int NOT NULL,
     buildTimeSeconds decimal(6,2) NOT NULL,
     passedQA         bit NOT NULL,
+    isComplete       bit NOT NULL DEFAULT 0,
     [timestamp]      datetime NOT NULL DEFAULT GETDATE(),
     CONSTRAINT FK_ProductionLog_Workstation FOREIGN KEY (stationID) REFERENCES dbo.Workstation(stationID),
     CONSTRAINT FK_ProductionLog_Worker FOREIGN KEY (workerID) REFERENCES dbo.Worker(workerID)
@@ -298,21 +303,24 @@ JOIN dbo.Part p ON wb.partID = p.partID;
 GO
 
 ------------------------------------------ vw_ProductionSummary ------------------------------------------
--- Kanban board: order amount, in process, produced, yield
+-- Kanban board: order amount, producing (in-progress), produced (complete), yield.
+-- Only rows with isComplete = 1 count as produced; isComplete = 0 rows are "producing".
 CREATE VIEW dbo.vw_ProductionSummary
 AS
 SELECT
     (SELECT settingValue FROM dbo.Configuration WHERE settingName = 'TargetOrderAmount') AS orderAmount,
-    COUNT(*) AS totalProduced,
-    SUM(CASE WHEN passedQA = 1 THEN 1 ELSE 0 END) AS totalPassed,
-    SUM(CASE WHEN passedQA = 0 THEN 1 ELSE 0 END) AS totalFailed,
-    CASE 
-        WHEN COUNT(*) > 0 
-        THEN CAST(SUM(CASE WHEN passedQA = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS decimal(5,2))
-        ELSE 0 
+    SUM(CASE WHEN isComplete = 1 THEN 1 ELSE 0 END) AS totalProduced,
+    SUM(CASE WHEN isComplete = 1 AND passedQA = 1 THEN 1 ELSE 0 END) AS totalPassed,
+    SUM(CASE WHEN isComplete = 1 AND passedQA = 0 THEN 1 ELSE 0 END) AS totalFailed,
+    SUM(CASE WHEN isComplete = 0 THEN 1 ELSE 0 END) AS inProgress,
+    CASE
+        WHEN SUM(CASE WHEN isComplete = 1 THEN 1 ELSE 0 END) > 0
+        THEN CAST(SUM(CASE WHEN isComplete = 1 AND passedQA = 1 THEN 1 ELSE 0 END) * 100.0
+                / SUM(CASE WHEN isComplete = 1 THEN 1 ELSE 0 END) AS decimal(5,2))
+        ELSE 0
     END AS yieldPercent,
-    (SELECT settingValue FROM dbo.Configuration WHERE settingName = 'TargetOrderAmount') 
-        - SUM(CASE WHEN passedQA = 1 THEN 1 ELSE 0 END) AS remainingOrder
+    (SELECT settingValue FROM dbo.Configuration WHERE settingName = 'TargetOrderAmount')
+        - SUM(CASE WHEN isComplete = 1 AND passedQA = 1 THEN 1 ELSE 0 END) AS remainingOrder
 FROM dbo.ProductionLog;
 GO
 
@@ -372,12 +380,15 @@ GO
 --========================================================================================================
 
 ------------------------------------------ sp_BuildLamp ------------------------------------------
--- Builds 1 lamp at a station. Returns build time, QA result, and built flag as OUTPUT.
+-- Builds 1 lamp at a station. Returns build time, QA result, built flag, and logID as OUTPUT.
+-- isComplete = 0 on insert; C# caller calls sp_CompleteLamp after the simulated duration
+-- elapses so the Kanban "producing" count stays accurate while assembly is in progress.
 CREATE PROCEDURE dbo.sp_BuildLamp
     @stationID int,
     @built     int OUTPUT,
     @buildTime decimal(6,2) OUTPUT,
-    @passed    bit OUTPUT
+    @passed    bit OUTPUT,
+    @logID     int OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -391,6 +402,7 @@ BEGIN
     SET @built = 0;
     SET @buildTime = 0;
     SET @passed = 1;
+    SET @logID = 0;
 
     -- Block if any bin is empty
     IF EXISTS
@@ -427,13 +439,39 @@ BEGIN
     SET currentQuantity = currentQuantity - 1
     WHERE stationID = @stationID;
 
-    -- Log the production
-    INSERT INTO dbo.ProductionLog (stationID, workerID, buildTimeSeconds, passedQA, [timestamp])
-    VALUES (@stationID, @workerID, @buildTime, @passed, GETDATE());
+    -- Log the production with isComplete = 0 (assembly is in progress, not yet done)
+    INSERT INTO dbo.ProductionLog (stationID, workerID, buildTimeSeconds, passedQA, isComplete, [timestamp])
+    VALUES (@stationID, @workerID, @buildTime, @passed, 0, GETDATE());
+
+    SET @logID = SCOPE_IDENTITY();
 
     UPDATE dbo.Workstation SET status = 'Running' WHERE stationID = @stationID;
 
     SET @built = 1;
+END;
+GO
+
+------------------------------------------ sp_CompleteLamp ------------------------------------------
+-- Marks a production log entry as complete. Called by C# after the simulated assembly
+-- duration elapses and isRunning is still true (i.e. the lamp was actually finished).
+CREATE PROCEDURE dbo.sp_CompleteLamp
+    @logID int
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.ProductionLog SET isComplete = 1 WHERE logID = @logID;
+END;
+GO
+
+------------------------------------------ sp_CancelLamp ------------------------------------------
+-- Removes an in-progress log entry when Stop is pressed mid-build. Only deletes rows
+-- with isComplete = 0 to prevent accidental removal of finished records.
+CREATE PROCEDURE dbo.sp_CancelLamp
+    @logID int
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE FROM dbo.ProductionLog WHERE logID = @logID AND isComplete = 0;
 END;
 GO
 
