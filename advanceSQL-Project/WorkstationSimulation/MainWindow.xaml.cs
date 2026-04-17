@@ -1,10 +1,12 @@
-﻿/*
+/*
  * FILE          : MainWindow.xaml.cs
- * PROJECT       : Advanced SQL Project 
+ * PROJECT       : Advanced SQL Project
  * PROGRAMMER    : Tuan Thanh Nguyen, Burhan Shibli
  * FIRST VERSION : 2026-03-08
  * DESCRIPTION   : WPF workstation simulation. Calls sp_BuildLamp in a loop,
  *                 uses the returned build time and TimeScaleMultiplier for delay.
+ *                 A DispatcherTimer fires every 100 ms to keep the stopwatch and
+ *                 progress bar in sync with the simulation thread.
  *                 Station is selectable at startup so multiple instances can run.
  */
 
@@ -13,28 +15,46 @@ using System.Data;
 using System.Data.SqlClient;
 using System.Threading;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace WorkstationSimulation
 {
     public partial class MainWindow : Window
     {
         private const string kConnectionString = @"Server=localhost;Database=FogLampAssemblyDB;Trusted_Connection=True;";
-        private int stationID = 0;
-        private int lampCount = 0;
-        private int passCount = 0;
-        private int failCount = 0;
-        private Thread simulationThread;
-        private volatile bool isRunning = false;
+
+        private int     stationID  = 0;
+        private int     lampCount  = 0;
+        private int     passCount  = 0;
+        private int     failCount  = 0;
+        private Thread  simulationThread;
+        private volatile bool isRunning      = false;
+
+        // Shared state written by simulation thread, read by UI timer
+        private long buildStartTicks  = 0;
+        private volatile int  buildDurationMs  = 0;
+        private volatile bool buildInProgress  = false;
+        private volatile bool isBlocked        = false;
+
+        private DispatcherTimer uiTimer;
 
         public MainWindow()
         {
             InitializeComponent();
             LoadStations();
+
+            uiTimer          = new DispatcherTimer();
+            uiTimer.Interval = TimeSpan.FromMilliseconds(100);
+            uiTimer.Tick    += UiTimer_Tick;
         }
 
-        /// <summary>
-        /// Loads available stations into the combo box for selection
-        /// </summary>
+        /*
+         * FUNCTION    : LoadStations
+         * DESCRIPTION : Populates the combo box with available stations and assigned workers.
+         * PARAMETERS  : None
+         * RETURNS     : void
+         */
         private void LoadStations()
         {
             try
@@ -42,12 +62,13 @@ namespace WorkstationSimulation
                 using (SqlConnection conn = new SqlConnection(kConnectionString))
                 {
                     conn.Open();
-                    string sql = @"SELECT ws.stationID, 
-                                          ws.stationName + ' - ' + ISNULL(w.firstName + ' ' + w.lastName, 'Unassigned') 
+                    string sql = @"SELECT ws.stationID,
+                                          ws.stationName + ' - '
+                                          + ISNULL(w.firstName + ' ' + w.lastName, 'Unassigned')
                                           + ' (' + ISNULL(w.skillLevel, 'N/A') + ')' AS displayName
-                                   FROM Workstation ws
+                                   FROM   Workstation ws
                                    LEFT JOIN Worker w ON ws.currentWorkerID = w.workerID
-                                   ORDER BY ws.stationID";
+                                   ORDER  BY ws.stationID";
 
                     SqlCommand cmd = new SqlCommand(sql, conn);
                     using (SqlDataReader reader = cmd.ExecuteReader())
@@ -56,7 +77,7 @@ namespace WorkstationSimulation
                         {
                             cmbStation.Items.Add(new StationItem
                             {
-                                StationID = Convert.ToInt32(reader["stationID"]),
+                                StationID   = Convert.ToInt32(reader["stationID"]),
                                 DisplayName = reader["displayName"].ToString()
                             });
                         }
@@ -64,9 +85,7 @@ namespace WorkstationSimulation
                 }
 
                 if (cmbStation.Items.Count > 0)
-                {
                     cmbStation.SelectedIndex = 0;
-                }
             }
             catch (Exception ex)
             {
@@ -74,9 +93,13 @@ namespace WorkstationSimulation
             }
         }
 
-        /// <summary>
-        /// Starts the simulation for the selected station
-        /// </summary>
+        /*
+         * FUNCTION    : btnStart_Click
+         * DESCRIPTION : Starts the simulation thread and UI timer for the selected station.
+         * PARAMETERS  : object sender     : The button that raised the event
+         *               RoutedEventArgs e : Event data
+         * RETURNS     : void
+         */
         private void btnStart_Click(object sender, RoutedEventArgs e)
         {
             if (isRunning) return;
@@ -84,51 +107,117 @@ namespace WorkstationSimulation
             StationItem selected = cmbStation.SelectedItem as StationItem;
             if (selected == null)
             {
-                MessageBox.Show("Please select a station.", "No Station", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please select a station.", "No Station",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            stationID = selected.StationID;
-            lampCount = 0;
-            passCount = 0;
-            failCount = 0;
-            isRunning = true;
+            stationID       = selected.StationID;
+            lampCount       = 0;
+            passCount       = 0;
+            failCount       = 0;
+            buildInProgress = false;
+            isBlocked       = false;
+            isRunning       = true;
 
             cmbStation.IsEnabled = false;
-            btnStart.IsEnabled = false;
-            btnStop.IsEnabled = true;
-            txtStation.Text = selected.DisplayName;
-            txtStatus.Text = "Starting simulation...";
+            btnStart.IsEnabled   = false;
+            btnStop.IsEnabled    = true;
+            txtStation.Text      = selected.DisplayName;
+            txtStatus.Text       = "Starting simulation...";
+            txtLastResult.Text   = "—";
 
             simulationThread = new Thread(RunSimulation);
             simulationThread.IsBackground = true;
             simulationThread.Start();
+
+            uiTimer.Start();
         }
 
-        /// <summary>
-        /// Stops the simulation
-        /// </summary>
+        /*
+         * FUNCTION    : btnStop_Click
+         * DESCRIPTION : Stops the simulation thread and UI timer, resets the stopwatch.
+         * PARAMETERS  : object sender     : The button that raised the event
+         *               RoutedEventArgs e : Event data
+         * RETURNS     : void
+         */
         private void btnStop_Click(object sender, RoutedEventArgs e)
         {
-            isRunning = false;
-            btnStop.IsEnabled = false;
-            btnStart.IsEnabled = true;
+            isRunning       = false;
+            buildInProgress = false;
+            isBlocked       = false;
+
+            uiTimer.Stop();
+
+            btnStop.IsEnabled    = false;
+            btnStart.IsEnabled   = true;
             cmbStation.IsEnabled = true;
-            txtStatus.Text = "Simulation stopped.";
+            txtStatus.Text       = "Simulation stopped.";
+            txtStopwatch.Text    = "--:--.--";
+            progressBuild.Value  = 0;
         }
 
-        /// <summary>
-        /// Main simulation loop — calls sp_BuildLamp and sleeps for scaled build time
-        /// </summary>
+        /*
+         * FUNCTION    : UiTimer_Tick
+         * DESCRIPTION : Fires every 100 ms on the UI thread. Reads shared volatile state
+         *               set by the simulation thread to update the stopwatch label and
+         *               progress bar without any cross-thread marshalling overhead.
+         * PARAMETERS  : object sender : The DispatcherTimer
+         *               EventArgs e   : Event data
+         * RETURNS     : void
+         */
+        private void UiTimer_Tick(object sender, EventArgs e)
+        {
+            if (isBlocked)
+            {
+                txtStopwatch.Text         = "BLOCKED";
+                txtTargetTime.Text        = "";
+                progressBuild.Value       = 0;
+                progressBuild.Foreground  = Brushes.OrangeRed;
+                return;
+            }
+
+            if (!buildInProgress || buildDurationMs <= 0)
+            {
+                txtStopwatch.Text   = "--:--.--";
+                txtTargetTime.Text  = "";
+                progressBuild.Value = 0;
+                return;
+            }
+
+            double elapsedMs = TimeSpan.FromTicks(DateTime.Now.Ticks - Interlocked.Read(ref buildStartTicks)).TotalMilliseconds;
+            elapsedMs = Math.Min(elapsedMs, buildDurationMs);
+
+            TimeSpan ts = TimeSpan.FromMilliseconds(elapsedMs);
+            txtStopwatch.Text  = string.Format("{0}:{1:00}.{2:00}",
+                (int)ts.TotalMinutes, ts.Seconds, ts.Milliseconds / 10);
+            txtTargetTime.Text = string.Format("/ {0:F1}s", buildDurationMs / 1000.0);
+
+            double pct = elapsedMs / buildDurationMs * 100.0;
+            progressBuild.Value      = pct;
+            progressBuild.Foreground = pct < 85.0
+                ? new SolidColorBrush(Color.FromRgb(40, 167, 69))   // green
+                : new SolidColorBrush(Color.FromRgb(255, 193, 7));  // amber near end
+        }
+
+        /*
+         * FUNCTION    : RunSimulation
+         * DESCRIPTION : Main simulation loop running on a background thread. Calls sp_BuildLamp,
+         *               then sets volatile state for the UI timer before sleeping for the scaled
+         *               build duration. Signals buildInProgress = false when the cycle ends so
+         *               the timer resets for the next lamp.
+         * PARAMETERS  : None
+         * RETURNS     : void
+         */
         private void RunSimulation()
         {
             while (isRunning)
             {
                 try
                 {
-                    int built = 0;
+                    int     built     = 0;
                     decimal buildTime = 0;
-                    bool passed = true;
+                    bool    passed    = true;
 
                     using (SqlConnection conn = new SqlConnection(kConnectionString))
                     {
@@ -136,56 +225,75 @@ namespace WorkstationSimulation
 
                         SqlCommand cmd = new SqlCommand("sp_BuildLamp", conn);
                         cmd.CommandType = CommandType.StoredProcedure;
-
                         cmd.Parameters.AddWithValue("@stationID", stationID);
 
-                        SqlParameter builtParam = new SqlParameter("@built", SqlDbType.Int);
-                        builtParam.Direction = ParameterDirection.Output;
+                        SqlParameter builtParam = new SqlParameter("@built", SqlDbType.Int)
+                            { Direction = ParameterDirection.Output };
                         cmd.Parameters.Add(builtParam);
 
-                        SqlParameter buildTimeParam = new SqlParameter("@buildTime", SqlDbType.Decimal);
-                        buildTimeParam.Direction = ParameterDirection.Output;
-                        buildTimeParam.Precision = 6;
-                        buildTimeParam.Scale = 2;
+                        SqlParameter buildTimeParam = new SqlParameter("@buildTime", SqlDbType.Decimal)
+                            { Direction = ParameterDirection.Output, Precision = 6, Scale = 2 };
                         cmd.Parameters.Add(buildTimeParam);
 
-                        SqlParameter passedParam = new SqlParameter("@passed", SqlDbType.Bit);
-                        passedParam.Direction = ParameterDirection.Output;
+                        SqlParameter passedParam = new SqlParameter("@passed", SqlDbType.Bit)
+                            { Direction = ParameterDirection.Output };
                         cmd.Parameters.Add(passedParam);
 
                         cmd.ExecuteNonQuery();
 
-                        built = Convert.ToInt32(builtParam.Value);
+                        built     = Convert.ToInt32(builtParam.Value);
                         buildTime = Convert.ToDecimal(buildTimeParam.Value);
-                        passed = Convert.ToBoolean(passedParam.Value);
+                        passed    = Convert.ToBoolean(passedParam.Value);
                     }
 
                     if (built == 1)
                     {
-                        lampCount++;
-                        if (passed) passCount++; else failCount++;
+                        isBlocked = false;
 
-                        Dispatcher.Invoke(() =>
-                        {
-                            txtStatus.Text = string.Format("Running... Lamp #{0} | {1:F1}s | {2} | Pass:{3} Fail:{4}",
-                                lampCount, buildTime, passed ? "PASS" : "FAIL", passCount, failCount);
-                        });
-
-                        // Sleep for the build time, scaled by TimeScaleMultiplier
+                        // Arm stopwatch before sleeping — lamp is not complete yet
                         decimal timeScale = GetConfigValue("TimeScaleMultiplier");
                         if (timeScale <= 0) timeScale = 1;
                         int sleepMs = (int)((double)buildTime / (double)timeScale * 1000.0);
                         if (sleepMs < 50) sleepMs = 50;
-                        Thread.Sleep(sleepMs);
+
+                        buildDurationMs = sleepMs;
+                        Interlocked.Exchange(ref buildStartTicks, DateTime.Now.Ticks);
+                        buildInProgress = true;
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            txtStatus.Text = "Assembling...";
+                        });
+
+                        Thread.Sleep(sleepMs);  // simulate the worker building the lamp
+
+                        buildInProgress = false;
+
+                        // Assembly complete — now count and display the result
+                        lampCount++;
+                        if (passed) passCount++; else failCount++;
+
+                        string lastResult = string.Format(
+                            "Lamp #{0} | {1:F1}s | {2} | Pass: {3}  Fail: {4}",
+                            lampCount, buildTime, passed ? "PASS" : "FAIL", passCount, failCount);
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            txtStatus.Text           = "Running...";
+                            txtLastResult.Text       = lastResult;
+                            txtLastResult.Foreground = passed ? Brushes.DarkGreen : Brushes.DarkRed;
+                        });
                     }
                     else
                     {
+                        buildInProgress = false;
+                        isBlocked       = true;
+
                         Dispatcher.Invoke(() =>
                         {
-                            txtStatus.Text = "BLOCKED - waiting for runner to refill bins...";
+                            txtStatus.Text = "BLOCKED — waiting for runner to refill bins...";
                         });
 
-                        // Wait 2 seconds (scaled) then retry
                         decimal timeScale = GetConfigValue("TimeScaleMultiplier");
                         if (timeScale <= 0) timeScale = 1;
                         int waitMs = (int)(2000.0 / (double)timeScale);
@@ -195,6 +303,7 @@ namespace WorkstationSimulation
                 }
                 catch (Exception ex)
                 {
+                    buildInProgress = false;
                     Dispatcher.Invoke(() =>
                     {
                         txtStatus.Text = "Error: " + ex.Message;
@@ -204,9 +313,12 @@ namespace WorkstationSimulation
             }
         }
 
-        /// <summary>
-        /// Reads a configuration value from the database
-        /// </summary>
+        /*
+         * FUNCTION    : GetConfigValue
+         * DESCRIPTION : Reads a single configuration value from the database by setting name.
+         * PARAMETERS  : string settingName : The name of the setting to retrieve
+         * RETURNS     : decimal : The setting value, or 1 if not found or on error
+         */
         private decimal GetConfigValue(string settingName)
         {
             try
@@ -218,7 +330,7 @@ namespace WorkstationSimulation
                         "SELECT settingValue FROM Configuration WHERE settingName = @name", conn);
                     cmd.Parameters.AddWithValue("@name", settingName);
                     object result = cmd.ExecuteScalar();
-                    return result != null ? Convert.ToDecimal(result) : 0;
+                    return result != null ? Convert.ToDecimal(result) : 1;
                 }
             }
             catch
@@ -228,17 +340,14 @@ namespace WorkstationSimulation
         }
     }
 
-    /// <summary>
-    /// Helper class for the station combo box items
-    /// </summary>
+    /*
+     * CLASS       : StationItem
+     * DESCRIPTION : Helper class for the station combo box binding.
+     */
     public class StationItem
     {
-        public int StationID { get; set; }
+        public int    StationID   { get; set; }
         public string DisplayName { get; set; }
-
-        public override string ToString()
-        {
-            return DisplayName;
-        }
+        public override string ToString() => DisplayName;
     }
 }
