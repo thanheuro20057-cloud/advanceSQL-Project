@@ -4,8 +4,10 @@
  * PROGRAMMER    : Tuan Thanh Nguyen, Burhan Shibli
  * FIRST VERSION : 2026-03-08
  * DESCRIPTION   : WPF Assembly Line Kanban board. Polls vw_ProductionSummary for global
- *                 metrics (order, in-process, produced, yield) and shows a per-station
+ *                 metrics (order, producing, produced, yield) and shows a per-station
  *                 breakdown every 2 seconds. Blocked stations are highlighted in the grid.
+ *                 "Producing" counts lamps currently mid-assembly (isComplete = 0);
+ *                 "Produced" counts only completed lamps (isComplete = 1).
  */
 
 using System;
@@ -62,7 +64,7 @@ namespace AssemblyLineKanban
                     conn.Open();
 
                     // -- Overall Kanban summary --
-                    string summarySQL = @"SELECT orderAmount, totalPassed, yieldPercent, remainingOrder
+                    string summarySQL = @"SELECT orderAmount, totalPassed, inProgress, yieldPercent, remainingOrder
                                           FROM   vw_ProductionSummary";
 
                     SqlCommand summaryCmd = new SqlCommand(summarySQL, conn);
@@ -70,9 +72,10 @@ namespace AssemblyLineKanban
                     {
                         if (reader.Read())
                         {
-                            txtOrder.Text    = Convert.ToDecimal(reader["orderAmount"]).ToString("0");
-                            txtProduced.Text = reader["totalPassed"].ToString();
-                            txtYield.Text    = Convert.ToDecimal(reader["yieldPercent"]).ToString("0.0") + "%";
+                            txtOrder.Text     = Convert.ToDecimal(reader["orderAmount"]).ToString("0");
+                            txtProduced.Text  = reader["totalPassed"].ToString();
+                            txtInProcess.Text = reader["inProgress"].ToString();
+                            txtYield.Text     = Convert.ToDecimal(reader["yieldPercent"]).ToString("0.0") + "%";
 
                             decimal remaining = Convert.ToDecimal(reader["remainingOrder"]);
                             txtRemaining.Text = string.Format("Remaining to order: {0}",
@@ -80,20 +83,16 @@ namespace AssemblyLineKanban
                         }
                     }
 
-                    // -- In-process: number of Running workstations --
-                    string inProcessSQL = "SELECT COUNT(*) FROM Workstation WHERE status = 'Running'";
-                    SqlCommand inProcessCmd = new SqlCommand(inProcessSQL, conn);
-                    txtInProcess.Text = inProcessCmd.ExecuteScalar().ToString();
-
                     // -- Per-station breakdown --
                     string stationSQL = @"
                         SELECT ws.stationName,
                                ws.status,
                                ISNULL(w.firstName + ' ' + w.lastName, 'Unassigned') AS workerName,
                                ISNULL(w.skillLevel, 'N/A') AS skillLevel,
-                               COUNT(pl.logID) AS produced,
-                               SUM(CASE WHEN pl.passedQA = 1 THEN 1 ELSE 0 END) AS passed,
-                               SUM(CASE WHEN pl.passedQA = 0 THEN 1 ELSE 0 END) AS failed
+                               SUM(CASE WHEN pl.isComplete = 0 THEN 1 ELSE 0 END) AS producing,
+                               SUM(CASE WHEN pl.isComplete = 1 THEN 1 ELSE 0 END) AS produced,
+                               SUM(CASE WHEN pl.isComplete = 1 AND pl.passedQA = 1 THEN 1 ELSE 0 END) AS passed,
+                               SUM(CASE WHEN pl.isComplete = 1 AND pl.passedQA = 0 THEN 1 ELSE 0 END) AS failed
                         FROM       Workstation ws
                         LEFT JOIN  Worker w ON ws.currentWorkerID = w.workerID
                         LEFT JOIN  ProductionLog pl ON ws.stationID = pl.stationID
@@ -113,9 +112,10 @@ namespace AssemblyLineKanban
                                 StationName   = reader["stationName"].ToString(),
                                 WorkerName    = reader["workerName"].ToString(),
                                 SkillLevel    = reader["skillLevel"].ToString(),
-                                Produced      = Convert.ToInt32(reader["produced"]),
-                                Passed        = reader["passed"] == DBNull.Value ? 0 : Convert.ToInt32(reader["passed"]),
-                                Failed        = reader["failed"] == DBNull.Value ? 0 : Convert.ToInt32(reader["failed"]),
+                                Producing     = reader["producing"] == DBNull.Value ? 0 : Convert.ToInt32(reader["producing"]),
+                                Produced      = reader["produced"]  == DBNull.Value ? 0 : Convert.ToInt32(reader["produced"]),
+                                Passed        = reader["passed"]    == DBNull.Value ? 0 : Convert.ToInt32(reader["passed"]),
+                                Failed        = reader["failed"]    == DBNull.Value ? 0 : Convert.ToInt32(reader["failed"]),
                                 StationStatus = reader["status"].ToString()
                             });
                         }
@@ -138,6 +138,7 @@ namespace AssemblyLineKanban
         public string StationName   { get; set; }
         public string WorkerName    { get; set; }
         public string SkillLevel    { get; set; }
+        public int    Producing     { get; set; }
         public int    Produced      { get; set; }
         public int    Passed        { get; set; }
         public int    Failed        { get; set; }
