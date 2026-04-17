@@ -8,6 +8,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -23,12 +24,21 @@
                       SelectionChanged="CmbStation_SelectionChanged"/>
         </StackPanel>
 
+        <!-- Runner alert banner — visible only when a bin is low -->
+        <Border x:Name="bannerRunner" Grid.Row="2"
+                Background="#FFDC3545" CornerRadius="4" Margin="0,0,0,6"
+                Visibility="Collapsed">
+            <TextBlock Text="&#9888; RUNNER NEEDED — BIN LOW &#9888;"
+                       FontSize="16" FontWeight="Bold" Foreground="White"
+                       HorizontalAlignment="Center" Padding="0,6"/>
+        </Border>
+
         <!-- Station status label -->
         <TextBlock x:Name="txtStatus" Text="" FontSize="15" FontWeight="SemiBold"
-                   HorizontalAlignment="Center" Margin="0,0,0,8" Grid.Row="2"/>
+                   HorizontalAlignment="Center" Margin="0,0,0,8" Grid.Row="3"/>
 
         <!-- Part bin levels -->
-        <DataGrid x:Name="gridParts" Grid.Row="3" AutoGenerateColumns="False"
+        <DataGrid x:Name="gridParts" Grid.Row="4" AutoGenerateColumns="False"
                   CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column"
                   AlternatingRowBackground="#FFF5F5F5" Margin="0,0,0,10">
             <DataGrid.RowStyle>
@@ -50,6 +60,6 @@
         </DataGrid>
 
         <TextBlock x:Name="txtRefresh" Text="" FontSize="11" Foreground="Gray"
-                   HorizontalAlignment="Right" Grid.Row="4"/>
+                   HorizontalAlignment="Right" Grid.Row="5"/>
     </Grid>
 </Window>

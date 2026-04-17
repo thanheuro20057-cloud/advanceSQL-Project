@@ -16,7 +16,7 @@ namespace ConfigurationTool
 {
     public partial class MainWindow : Window
     {
-        // Update "localhost" to your SQL Server instance name if different (e.g., "localhost\\SQLEXPRESS")
+        // connection string to connect to the local SQL Server instance and FogLampAssemblyDB database
         private const string kConnectionString = @"Server=localhost;Database=FogLampAssemblyDB;Trusted_Connection=True;";
 
         private SqlDataAdapter myDataAdapter;

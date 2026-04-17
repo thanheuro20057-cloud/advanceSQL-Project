@@ -150,6 +150,10 @@ namespace WorkstationAndon
                     ? Brushes.Red
                     : Brushes.Green;
 
+                // Show prominent runner banner when any bin is low
+                bool anyLow = rows.Exists(r => r.IsLow);
+                bannerRunner.Visibility = anyLow ? Visibility.Visible : Visibility.Collapsed;
+
                 gridParts.ItemsSource = rows;
                 txtRefresh.Text = "Last updated: " + DateTime.Now.ToString("HH:mm:ss");
             }
