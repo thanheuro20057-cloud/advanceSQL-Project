@@ -24,7 +24,8 @@ namespace WorkstationSimulation
     {
         private const string kConnectionString = @"Server=localhost;Database=FogLampAssemblyDB;Trusted_Connection=True;";
 
-        private int     stationID  = 0;
+        private int     stationID     = 0;
+        private int     lastStationID = 0;   // counters reset only when station changes
         private int     lampCount  = 0;
         private int     passCount  = 0;
         private int     failCount  = 0;
@@ -112,10 +113,19 @@ namespace WorkstationSimulation
                 return;
             }
 
-            stationID       = selected.StationID;
-            lampCount       = 0;
-            passCount       = 0;
-            failCount       = 0;
+            stationID = selected.StationID;
+
+            // Reset counters only when the user switches to a different station.
+            // Stop → Start on the same station resumes totals from where they left off.
+            if (stationID != lastStationID)
+            {
+                lampCount     = 0;
+                passCount     = 0;
+                failCount     = 0;
+                lastStationID = stationID;
+                txtLastResult.Text = "—";
+            }
+
             buildInProgress = false;
             isBlocked       = false;
             isRunning       = true;
@@ -125,7 +135,6 @@ namespace WorkstationSimulation
             btnStop.IsEnabled    = true;
             txtStation.Text      = selected.DisplayName;
             txtStatus.Text       = "Starting simulation...";
-            txtLastResult.Text   = "—";
 
             simulationThread = new Thread(RunSimulation);
             simulationThread.IsBackground = true;
@@ -265,24 +274,35 @@ namespace WorkstationSimulation
                             txtStatus.Text = "Assembling...";
                         });
 
-                        Thread.Sleep(sleepMs);  // simulate the worker building the lamp
+                        // Interruptible sleep: wake every 50 ms to check isRunning.
+                        // A plain Thread.Sleep would let lampCount++ fire even after Stop.
+                        int slept = 0;
+                        while (slept < sleepMs && isRunning)
+                        {
+                            Thread.Sleep(50);
+                            slept += 50;
+                        }
 
                         buildInProgress = false;
 
-                        // Assembly complete — now count and display the result
-                        lampCount++;
-                        if (passed) passCount++; else failCount++;
-
-                        string lastResult = string.Format(
-                            "Lamp #{0} | {1:F1}s | {2} | Pass: {3}  Fail: {4}",
-                            lampCount, buildTime, passed ? "PASS" : "FAIL", passCount, failCount);
-
-                        Dispatcher.Invoke(() =>
+                        // Only count the lamp if the simulation is still running.
+                        // If Stop was pressed mid-build, discard this cycle silently.
+                        if (isRunning)
                         {
-                            txtStatus.Text           = "Running...";
-                            txtLastResult.Text       = lastResult;
-                            txtLastResult.Foreground = passed ? Brushes.DarkGreen : Brushes.DarkRed;
-                        });
+                            lampCount++;
+                            if (passed) passCount++; else failCount++;
+
+                            string lastResult = string.Format(
+                                "Lamp #{0} | {1:F1}s | {2} | Pass: {3}  Fail: {4}",
+                                lampCount, buildTime, passed ? "PASS" : "FAIL", passCount, failCount);
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                txtStatus.Text           = "Running...";
+                                txtLastResult.Text       = lastResult;
+                                txtLastResult.Foreground = passed ? Brushes.DarkGreen : Brushes.DarkRed;
+                            });
+                        }
                     }
                     else
                     {
@@ -298,7 +318,13 @@ namespace WorkstationSimulation
                         if (timeScale <= 0) timeScale = 1;
                         int waitMs = (int)(2000.0 / (double)timeScale);
                         if (waitMs < 100) waitMs = 100;
-                        Thread.Sleep(waitMs);
+
+                        int waited = 0;
+                        while (waited < waitMs && isRunning)
+                        {
+                            Thread.Sleep(50);
+                            waited += 50;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -308,7 +334,8 @@ namespace WorkstationSimulation
                     {
                         txtStatus.Text = "Error: " + ex.Message;
                     });
-                    Thread.Sleep(3000);
+                    for (int i = 0; i < 60 && isRunning; i++)
+                        Thread.Sleep(50);
                 }
             }
         }
