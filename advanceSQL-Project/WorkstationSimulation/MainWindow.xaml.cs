@@ -228,6 +228,7 @@ namespace WorkstationSimulation
                     decimal buildTime = 0;
                     bool    passed    = true;
                     int     logID     = 0;
+                    decimal timeScale = 1;
 
                     using (SqlConnection conn = new SqlConnection(kConnectionString))
                     {
@@ -259,14 +260,18 @@ namespace WorkstationSimulation
                         buildTime = Convert.ToDecimal(buildTimeParam.Value);
                         passed    = Convert.ToBoolean(passedParam.Value);
                         logID     = Convert.ToInt32(logIDParam.Value);
+
+                        // Read TimeScaleMultiplier on the same open connection — no extra round-trip.
+                        SqlCommand cfgCmd = new SqlCommand(
+                            "SELECT settingValue FROM Configuration WHERE settingName = 'TimeScaleMultiplier'", conn);
+                        object cfgVal = cfgCmd.ExecuteScalar();
+                        timeScale = cfgVal != null ? Convert.ToDecimal(cfgVal) : 1;
                     }
 
                     if (built == 1)
                     {
                         isBlocked = false;
 
-                        // Arm stopwatch before sleeping — lamp is not complete yet
-                        decimal timeScale = GetConfigValue("TimeScaleMultiplier");
                         if (timeScale <= 0) timeScale = 1;
                         int sleepMs = (int)((double)buildTime / (double)timeScale * 1000.0);
                         if (sleepMs < 50) sleepMs = 50;
@@ -275,18 +280,22 @@ namespace WorkstationSimulation
                         Interlocked.Exchange(ref buildStartTicks, DateTime.Now.Ticks);
                         buildInProgress = true;
 
-                        Dispatcher.Invoke(() =>
+                        Dispatcher.BeginInvoke(new Action(() =>
                         {
                             txtStatus.Text = "Assembling...";
-                        });
+                        }));
 
-                        // Interruptible sleep: wake every 50 ms to check isRunning.
-                        // A plain Thread.Sleep would let lampCount++ fire even after Stop.
-                        int slept = 0;
-                        while (slept < sleepMs && isRunning)
+                        // Interruptible sleep: check real elapsed time, not a counter.
+                        // Thread.Sleep(50) on Windows rounds up to ~62 ms per tick; using a
+                        // counter (slept += 50) accumulates that error across every iteration
+                        // and causes visible stalls at the end of each build cycle.
+                        long sleepStart = DateTime.Now.Ticks;
+                        while (isRunning)
                         {
-                            Thread.Sleep(50);
-                            slept += 50;
+                            double remaining = sleepMs
+                                - TimeSpan.FromTicks(DateTime.Now.Ticks - sleepStart).TotalMilliseconds;
+                            if (remaining <= 0) break;
+                            Thread.Sleep((int)Math.Min(50, remaining));
                         }
 
                         buildInProgress = false;
@@ -295,20 +304,32 @@ namespace WorkstationSimulation
                         // If Stop was pressed mid-build, cancel the in-progress log row.
                         if (isRunning)
                         {
-                            CallProc("sp_CompleteLamp", logID);
                             lampCount++;
                             if (passed) passCount++; else failCount++;
 
-                            string lastResult = string.Format(
-                                "Lamp #{0} | {1:F1}s | {2} | Pass: {3}  Fail: {4}",
-                                lampCount, buildTime, passed ? "PASS" : "FAIL", passCount, failCount);
+                            // Capture loop-locals so the closures below are safe.
+                            int     capturedLogID  = logID;
+                            int     capturedNum    = lampCount;
+                            decimal capturedBT     = buildTime;
+                            bool    capturedPassed = passed;
+                            int     capturedPass   = passCount;
+                            int     capturedFail   = failCount;
 
-                            Dispatcher.Invoke(() =>
+                            // Complete DB record off the sim thread — no blocking round-trip.
+                            System.Threading.ThreadPool.QueueUserWorkItem(
+                                _ => CallProc("sp_CompleteLamp", capturedLogID));
+
+                            // Post UI update without waiting — sim thread loops back immediately.
+                            Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                txtStatus.Text           = "Running...";
-                                txtLastResult.Text       = lastResult;
-                                txtLastResult.Foreground = passed ? Brushes.DarkGreen : Brushes.DarkRed;
-                            });
+                                txtLastResult.Text = string.Format(
+                                    "Lamp #{0} | {1:F1}s | {2} | Pass: {3}  Fail: {4}",
+                                    capturedNum, capturedBT,
+                                    capturedPassed ? "PASS" : "FAIL",
+                                    capturedPass, capturedFail);
+                                txtLastResult.Foreground = capturedPassed
+                                    ? Brushes.DarkGreen : Brushes.DarkRed;
+                            }));
                         }
                         else if (logID > 0)
                         {
@@ -325,16 +346,17 @@ namespace WorkstationSimulation
                             txtStatus.Text = "BLOCKED — waiting for runner to refill bins...";
                         });
 
-                        decimal timeScale = GetConfigValue("TimeScaleMultiplier");
                         if (timeScale <= 0) timeScale = 1;
                         int waitMs = (int)(2000.0 / (double)timeScale);
                         if (waitMs < 100) waitMs = 100;
 
-                        int waited = 0;
-                        while (waited < waitMs && isRunning)
+                        long waitStart = DateTime.Now.Ticks;
+                        while (isRunning)
                         {
-                            Thread.Sleep(50);
-                            waited += 50;
+                            double remaining = waitMs
+                                - TimeSpan.FromTicks(DateTime.Now.Ticks - waitStart).TotalMilliseconds;
+                            if (remaining <= 0) break;
+                            Thread.Sleep((int)Math.Min(50, remaining));
                         }
                     }
                 }
