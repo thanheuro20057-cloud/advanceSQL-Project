@@ -1,0 +1,65 @@
+<Window x:Class="RunnerDisplay.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Runner Display" Height="500" Width="620"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Prominent heading -->
+        <TextBlock Text="RUNNER DISPLAY" FontSize="26" FontWeight="Bold"
+                   HorizontalAlignment="Center" Foreground="#FFDC3545"
+                   Margin="0,0,0,5" Grid.Row="0"/>
+
+        <!-- Alert count banner — background changes with urgency -->
+        <Border x:Name="bannerAlert" Grid.Row="1" CornerRadius="4" Margin="0,0,0,10"
+                Background="#FFE8F5E9">
+            <TextBlock x:Name="txtAlertCount" Text="No active alerts"
+                       FontSize="17" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" Padding="0,8"/>
+        </Border>
+
+        <!-- Alerts grid — solid red rows so bins are impossible to miss -->
+        <DataGrid x:Name="gridAlerts" Grid.Row="2" AutoGenerateColumns="False"
+                  CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column"
+                  Margin="0,0,0,10" FontSize="14">
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="Background" Value="#FFFF6B6B"/>
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Station"    Binding="{Binding StationName}" Width="*"/>
+                <DataGridTextColumn Header="Part"       Binding="{Binding PartName}"    Width="*"/>
+                <DataGridTextColumn Header="Qty Left"   Binding="{Binding Qty}"         Width="70"/>
+                <DataGridTextColumn Header="Alert Time" Binding="{Binding AlertTime}"   Width="130"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Refill action buttons -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                    Grid.Row="3" Margin="0,0,0,10">
+            <Button x:Name="btnRefillStation" Content="Refill Selected Station"
+                    Width="200" Height="38" Margin="0,0,10,0"
+                    Click="BtnRefillStation_Click"
+                    Background="#FFDC3545" Foreground="White"
+                    FontWeight="Bold" FontSize="14"/>
+            <Button x:Name="btnRefillAll" Content="Refill All Stations"
+                    Width="160" Height="38"
+                    Click="BtnRefillAll_Click"
+                    Background="#FFFD7E14" Foreground="White"
+                    FontWeight="Bold" FontSize="14"/>
+        </StackPanel>
+
+        <TextBlock x:Name="txtRefresh" Text="" FontSize="11" Foreground="Gray"
+                   HorizontalAlignment="Right" Grid.Row="4"/>
+    </Grid>
+</Window>
