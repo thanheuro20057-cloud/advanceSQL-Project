@@ -1,0 +1,55 @@
+<Window x:Class="WorkstationAndon.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Workstation Andon Display" Height="420" Width="500"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Workstation Andon Display" FontSize="20" FontWeight="Bold"
+                   HorizontalAlignment="Center" Margin="0,0,0,10" Grid.Row="0"/>
+
+        <!-- Station selector -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                    Margin="0,0,0,8" Grid.Row="1">
+            <TextBlock Text="Station:" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox x:Name="cmbStation" Width="220" FontSize="14"
+                      SelectionChanged="CmbStation_SelectionChanged"/>
+        </StackPanel>
+
+        <!-- Station status label -->
+        <TextBlock x:Name="txtStatus" Text="" FontSize="15" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" Margin="0,0,0,8" Grid.Row="2"/>
+
+        <!-- Part bin levels -->
+        <DataGrid x:Name="gridParts" Grid.Row="3" AutoGenerateColumns="False"
+                  CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column"
+                  AlternatingRowBackground="#FFF5F5F5" Margin="0,0,0,10">
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsLow}" Value="True">
+                            <Setter Property="Background" Value="#FFDC3545"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Part"     Binding="{Binding PartName}" Width="*"/>
+                <DataGridTextColumn Header="Quantity" Binding="{Binding Qty}"      Width="80"/>
+                <DataGridTextColumn Header="Capacity" Binding="{Binding Capacity}" Width="80"/>
+                <DataGridTextColumn Header="Status"   Binding="{Binding Status}"   Width="100"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock x:Name="txtRefresh" Text="" FontSize="11" Foreground="Gray"
+                   HorizontalAlignment="Right" Grid.Row="4"/>
+    </Grid>
+</Window>
