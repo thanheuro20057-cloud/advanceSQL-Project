@@ -1,0 +1,96 @@
+<Window x:Class="AssemblyLineKanban.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Assembly Line Kanban" Height="560" Width="700"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Assembly Line Kanban Board" FontSize="22" FontWeight="Bold"
+                   HorizontalAlignment="Center" Margin="0,0,0,15" Grid.Row="0"/>
+
+        <!-- Kanban metric tiles: Order | In-Process | Produced | Yield -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="#FF0078D7" BorderThickness="2"
+                    CornerRadius="5" Margin="4">
+                <StackPanel HorizontalAlignment="Center" Margin="10">
+                    <TextBlock Text="ORDER" FontSize="12" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock x:Name="txtOrder" Text="0" FontSize="34" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="#FF0078D7"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" BorderBrush="#FF6C757D" BorderThickness="2"
+                    CornerRadius="5" Margin="4">
+                <StackPanel HorizontalAlignment="Center" Margin="10">
+                    <TextBlock Text="PRODUCING" FontSize="12" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock x:Name="txtInProcess" Text="0" FontSize="34" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="#FF6C757D"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" BorderBrush="#FF28A745" BorderThickness="2"
+                    CornerRadius="5" Margin="4">
+                <StackPanel HorizontalAlignment="Center" Margin="10">
+                    <TextBlock Text="PRODUCED" FontSize="12" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock x:Name="txtProduced" Text="0" FontSize="34" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="#FF28A745"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3" BorderBrush="#FFFD7E14" BorderThickness="2"
+                    CornerRadius="5" Margin="4">
+                <StackPanel HorizontalAlignment="Center" Margin="10">
+                    <TextBlock Text="YIELD" FontSize="12" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock x:Name="txtYield" Text="0%" FontSize="34" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="#FFFD7E14"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Remaining lamps label -->
+        <TextBlock x:Name="txtRemaining" Text="" FontSize="15" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" Margin="0,0,0,10" Grid.Row="2"/>
+
+        <!-- Per-station breakdown -->
+        <DataGrid x:Name="gridStations" Grid.Row="3" AutoGenerateColumns="False"
+                  CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column"
+                  AlternatingRowBackground="#FFF0F0F0" Margin="0,0,0,10">
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding StationStatus}" Value="Blocked">
+                            <Setter Property="Background" Value="#FFFFE0E0"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Station"   Binding="{Binding StationName}"   Width="*"/>
+                <DataGridTextColumn Header="Worker"    Binding="{Binding WorkerName}"    Width="*"/>
+                <DataGridTextColumn Header="Skill"     Binding="{Binding SkillLevel}"    Width="60"/>
+                <DataGridTextColumn Header="Producing" Binding="{Binding Producing}"     Width="75"/>
+                <DataGridTextColumn Header="Produced"  Binding="{Binding Produced}"      Width="75"/>
+                <DataGridTextColumn Header="Passed"    Binding="{Binding Passed}"        Width="65"/>
+                <DataGridTextColumn Header="Failed"    Binding="{Binding Failed}"        Width="65"/>
+                <DataGridTextColumn Header="Status"    Binding="{Binding StationStatus}" Width="85"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock x:Name="txtRefresh" Text="" FontSize="11" Foreground="Gray"
+                   HorizontalAlignment="Right" Grid.Row="4"/>
+    </Grid>
+</Window>
