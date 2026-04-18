@@ -79,9 +79,17 @@ namespace ConfigurationTool
                 configDataGrid.CommitEdit();
                 configDataGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
 
-                if (myDataAdapter != null && myConfigTable != null)
+                if (myConfigTable != null)
                 {
-                    myDataAdapter.Update(myConfigTable);
+                    // The connection used during Load was disposed when that using-block exited.
+                    // Open a fresh connection and rebuild the adapter so Update() has a live connection.
+                    using (SqlConnection conn = new SqlConnection(kConnectionString))
+                    {
+                        string sqlQuery = "SELECT configID, settingName, settingValue, description FROM Configuration";
+                        SqlDataAdapter saveAdapter = new SqlDataAdapter(sqlQuery, conn);
+                        SqlCommandBuilder commandBuilder = new SqlCommandBuilder(saveAdapter);
+                        saveAdapter.Update(myConfigTable);
+                    }
                     MessageBox.Show("Configuration parameters saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
