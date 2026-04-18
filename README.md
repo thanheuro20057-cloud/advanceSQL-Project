@@ -154,11 +154,11 @@ default capacities.
 Each program only needs network access to the SQL Server. To run on separate machines:
 
 1. Enable **TCP/IP** in SQL Server Configuration Manager on the server machine.
-2. Open firewall port **1433**.
+2. Open firewall port ****.
 3. Update `kConnectionString` in each program to point to the server's IP or hostname.
 4. Use SQL Server Authentication if Windows Auth is not available across machines:
    ```csharp
-   @"Server=192.168.1.10;Database=FogLampAssemblyDB;User Id=sa;Password=yourPassword;"
+   @"Server=localhost;Database=FogLampAssemblyDB;User Id=sa;Password=yourPassword;"
    ```
 
 ---
