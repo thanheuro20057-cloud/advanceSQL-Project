@@ -68,7 +68,7 @@ building. Common alternatives:
 |---|---|
 | SQL Server Express | `Server=localhost\SQLEXPRESS` |
 | Named instance | `Server=MyPC\SQLSERVER2022` |
-| Remote machine | `Server=192.168.1.10` (requires SQL auth, change `Trusted_Connection`) |
+
 
 ---
 
